@@ -15,3 +15,6 @@ By default, World of Warcraft scales its User Interface relatively to the edges 
 
 ## How it Works
 When transitioning into the world or changing UI scaling settings, the addon forces World of Warcraft's `UIParent` canvas size to respect the limitations defined in your Addon settings. Modifying these limits dynamically updates your UI scaling instantly without needing to reload the UI.
+
+# Disclaimer
+This addon is a product of pure vibe coding; while it has been tested primarily on Retail and seems to be holding it together, I offer no guarantees that it’s actually "good" or even reliable. Consider this an experimental labor of love rather than a polished professional tool. Use it at your own risk, keep your expectations low, and enjoy the vibes.
