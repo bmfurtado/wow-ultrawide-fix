@@ -1,3 +1,8 @@
+# UltrawideFix 1.3.0
+## Midnight
+### Fixed
+ - World map: zooming in no longer uses the incorrect zoom point.
+
 # UltrawideFix 1.2.0
 ## Midnight
 ### Fixed
