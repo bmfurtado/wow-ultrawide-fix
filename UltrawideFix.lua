@@ -128,6 +128,49 @@ local function UpdateUIParent()
 end
 
 -- ---------------------------------------------------------------------------
+-- WorldMap Zoom/Pan Fix
+-- ---------------------------------------------------------------------------
+-- MapCanvasScrollControllerMixin:GetCursorPosition() calls the global
+-- GetCursorPosition() then uses the result alongside Child:GetLeft()/GetTop()
+-- which are in true screen-space. Our global GetCursorPosition hook shifts
+-- coords into UIParent-relative space, creating a mismatch that offsets the
+-- zoom point and pan origin. Fix: override GetCursorPosition on the actual
+-- ScrollContainer frame instance(s) to call the original (unhooked)
+-- GetCursorPosition so all coordinates stay in screen-space.
+--
+-- NOTE: WoW's XML mixin system copies mixin methods onto each frame instance
+-- at creation time (Mixin(frame, Mixin)). Patching the mixin prototype table
+-- after the fact has no effect on already-created frames. We must patch every
+-- live ScrollContainer instance directly.
+
+local fixedGetCursorPosition = function(self)
+    local currentX, currentY = OriginalGetCursorPosition()
+    local effectiveScale = self:GetMap():GetEffectiveScale()
+    return currentX / effectiveScale, currentY / effectiveScale
+end
+
+local function PatchScrollContainer(container)
+    if container and container.GetCursorPosition then
+        container.GetCursorPosition = fixedGetCursorPosition
+    end
+end
+
+local function InstallWorldMapHook()
+    -- Walk every MapCanvas-using frame to find ScrollContainer children.
+    -- The canonical one is WorldMapFrame.ScrollContainer; others may exist
+    -- (e.g. quest log mini-maps). We search all named global frames that
+    -- carry a .ScrollContainer with a GetCursorPosition method.
+    if WorldMapFrame and WorldMapFrame.ScrollContainer then
+        PatchScrollContainer(WorldMapFrame.ScrollContainer)
+    end
+    -- Also patch the mixin prototype as a fallback for any frames created
+    -- after this point that weren't caught above.
+    if MapCanvasScrollControllerMixin then
+        MapCanvasScrollControllerMixin.GetCursorPosition = fixedGetCursorPosition
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- EditMode Compatibility Fixes
 -- ---------------------------------------------------------------------------
 -- When UIParent is smaller than the screen and centered, several EditMode
@@ -454,11 +497,21 @@ function addon.BuildSettingsMenu()
 end
 
 frame:SetScript("OnEvent", function(self, event, arg1)
-    if event == "ADDON_LOADED" and arg1 == addonName then
-        InitializeSettings()
-        InstallEditModeHooks()
-        if addon.BuildSettingsMenu then
-            addon.BuildSettingsMenu()
+    if event == "ADDON_LOADED" then
+        if arg1 == addonName then
+            InitializeSettings()
+            InstallEditModeHooks()
+            if addon.BuildSettingsMenu then
+                addon.BuildSettingsMenu()
+            end
+            -- Blizzard_MapCanvas is load-on-demand; if it was already
+            -- loaded before us (e.g. /reload after opening the map),
+            -- install the hook now.
+            if MapCanvasScrollControllerMixin then
+                InstallWorldMapHook()
+            end
+        elseif arg1 == "Blizzard_MapCanvas" then
+            InstallWorldMapHook()
         end
     elseif event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" or event == "DISPLAY_SIZE_CHANGED" or event == "UI_SCALE_CHANGED" then
         UpdateUIParent()
