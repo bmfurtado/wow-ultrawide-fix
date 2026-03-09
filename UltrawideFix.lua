@@ -514,10 +514,16 @@ frame:SetScript("OnEvent", function(self, event, arg1)
             InstallWorldMapHook()
         end
     elseif event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" or event == "DISPLAY_SIZE_CHANGED" or event == "UI_SCALE_CHANGED" then
-        UpdateUIParent()
-        if addon.UpdateSettingsUI then
-            addon.UpdateSettingsUI()
-        end
+        -- Defer by one frame so Blizzard's own UI restoration (e.g. action bars
+        -- returning from vehicle/override mode) finishes before we resize UIParent.
+        -- Without this, frames that re-anchor to UIParent mid-sequence can end up
+        -- misplaced after exiting vehicles or special encounter modes.
+        C_Timer.After(0, function()
+            UpdateUIParent()
+            if addon.UpdateSettingsUI then
+                addon.UpdateSettingsUI()
+            end
+        end)
     end
 end)
 
