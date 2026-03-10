@@ -1,3 +1,8 @@
+# UltrawideFix 1.4.1-alpha
+## Midnight
+### Fixed
+- Resolved a recurring taint error ("attempt to perform arithmetic on local 'textHeight' — a secret number value tainted by 'UltrawideFix'") triggered when hovering over map Points of Interest. The cursor position hook was returning tainted values by mixing addon variables with real coordinates; it now reads UIParent's position directly from its secure-handler-set geometry, which is untainted.
+
 # UltrawideFix 1.4.0-alpha
 ## Midnight
 ### Fixed
