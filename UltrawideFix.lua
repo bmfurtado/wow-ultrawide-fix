@@ -68,6 +68,50 @@ local isCutscenePlaying = false   -- true only during CINEMATIC_START / PLAY_MOV
 local isClientScenePlaying = false -- true during CLIENT_SCENE_OPENED; does NOT block UpdateUIParent
 
 -- ---------------------------------------------------------------------------
+-- Global (non-per-resolution) settings helpers
+-- ---------------------------------------------------------------------------
+local function GetGlobalSetting(key, default)
+    if UltrawideFixDB[key] ~= nil then return UltrawideFixDB[key] end
+    return default
+end
+
+local function SetGlobalSetting(key, value)
+    UltrawideFixDB[key] = value
+end
+
+-- ---------------------------------------------------------------------------
+-- CompactRaidFrameManager visibility
+-- ---------------------------------------------------------------------------
+-- When the player collapses the raid frame manager Blizzard moves it outside
+-- UIParent rather than hiding it.  With a reduced UIParent that off-screen
+-- position is still visible on the physical display, so we offer an option to
+-- suppress the frame entirely.
+local hideRaidManagerEnabled = false
+local raidManagerHookInstalled = false
+
+local function ApplyRaidManagerVisibility()
+    if not CompactRaidFrameManager then return end
+    if hideRaidManagerEnabled then
+        CompactRaidFrameManager:Hide()
+    else
+        CompactRaidFrameManager:Show()
+    end
+end
+
+local function InstallRaidManagerHook()
+    if raidManagerHookInstalled or not CompactRaidFrameManager then return end
+    -- Hook OnShow so that if Blizzard tries to re-show the frame while the
+    -- setting is active (e.g. when entering a group) we immediately hide it.
+    CompactRaidFrameManager:HookScript("OnShow", function(self)
+        if hideRaidManagerEnabled then
+            self:Hide()
+        end
+    end)
+    raidManagerHookInstalled = true
+    ApplyRaidManagerVisibility()
+end
+
+-- ---------------------------------------------------------------------------
 -- Secure UIParent resizer
 -- ---------------------------------------------------------------------------
 -- Calling UIParent:SetSize() directly from addon Lua taints UIParent's
@@ -688,6 +732,25 @@ function addon.BuildSettingsMenu()
     end
     Settings.CreateSlider(category, maxHeightSetting, heightOptions, "Maximum allowed height in pixels.")
 
+    local hideRaidManagerSetting = Settings.RegisterProxySetting(
+        category,
+        "UltrawideFix_HideRaidManager",
+        "boolean",
+        "Hide Raid Frame Manager",
+        false,
+        function() return GetGlobalSetting("hideRaidManager", false) end,
+        function(value)
+            SetGlobalSetting("hideRaidManager", value)
+            hideRaidManagerEnabled = value
+            InstallRaidManagerHook()
+            ApplyRaidManagerVisibility()
+        end
+    )
+    Settings.CreateCheckbox(category, hideRaidManagerSetting,
+        "Completely hide the Compact Raid Frame Manager. " ..
+        "When collapsed, Blizzard moves it outside UIParent rather than hiding it, " ..
+        "which makes it visible in the area revealed by Ultrawide Fix.")
+
     addon.UpdateSettingsUI = function()
         -- The modern DF API handles automatic binding to ProxySettings getters.
     end
@@ -709,6 +772,10 @@ frame:SetScript("OnEvent", function(self, event, arg1)
             end
         elseif arg1 == "Blizzard_MapCanvas" then
             InstallWorldMapHook()
+        elseif arg1 == "Blizzard_CompactRaidFrames" then
+            -- Load-on-demand; install the hook now that the frame exists.
+            hideRaidManagerEnabled = GetGlobalSetting("hideRaidManager", false)
+            InstallRaidManagerHook()
         end
     elseif event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" or event == "DISPLAY_SIZE_CHANGED" or event == "UI_SCALE_CHANGED" then
         -- Defer by one frame so Blizzard's own UI restoration (e.g. action bars
@@ -720,6 +787,10 @@ frame:SetScript("OnEvent", function(self, event, arg1)
             if addon.UpdateSettingsUI then
                 addon.UpdateSettingsUI()
             end
+            -- Blizzard_CompactRaidFrames may already be loaded (e.g. after /reload
+            -- while in a group).  Try to install the hook if not yet done.
+            hideRaidManagerEnabled = GetGlobalSetting("hideRaidManager", false)
+            InstallRaidManagerHook()
         end)
     elseif event == "CINEMATIC_START" or event == "PLAY_MOVIE" then
         OnCutsceneStart()

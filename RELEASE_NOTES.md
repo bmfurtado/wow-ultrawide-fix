@@ -1,3 +1,8 @@
+# UltrawideFix 1.4.3-alpha
+## Midnight
+### Added
+- New **Hide Raid Frame Manager** option in settings. When the Compact Raid Frame Manager is collapsed, Blizzard moves it outside UIParent rather than hiding it, which leaves it visible in the area revealed by Ultrawide Fix. Enabling this option suppresses the frame entirely.
+
 # UltrawideFix 1.4.2-alpha
 ## Midnight
 ### Fixed
