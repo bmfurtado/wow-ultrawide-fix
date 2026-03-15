@@ -383,6 +383,43 @@ local function InstallWorldMapHook()
 end
 
 -- ---------------------------------------------------------------------------
+-- UIWidget taint fix
+-- ---------------------------------------------------------------------------
+-- Replacing the global GetCursorPosition (above) taints that entry in _G.
+-- When secure Blizzard code later touches any tainted value in the same
+-- execution path, arithmetic on derived frame measurements fails with
+-- "secret number value tainted by 'UltrawideFix'".
+--
+-- The specific crash site is UIWidgetTemplateTextWithStateMixin:Setup, where
+--   local textHeight = self.Text:GetStringHeight()
+--   local bottomPadding = Clamp(widgetInfo.bottomPadding, 0, textHeight - 1)
+-- errors because textHeight is tainted.
+--
+-- Fix: wrap the mixin method so that our addon code is on the call stack.
+-- With insecure code on the stack the execution path is already insecure,
+-- so tainted values are freely usable.  If WoW still enforces secure context
+-- on the original function, pcall catches the error and we finish the height
+-- calculation ourselves (insecure code can always do arithmetic on tainted
+-- numbers).
+
+local function InstallWidgetTaintFixes()
+    if not UIWidgetTemplateTextWithStateMixin then return end
+
+    local OrigTextWithStateSetup = UIWidgetTemplateTextWithStateMixin.Setup
+    UIWidgetTemplateTextWithStateMixin.Setup = function(self, widgetInfo, widgetContainer)
+        local ok = pcall(OrigTextWithStateSetup, self, widgetInfo, widgetContainer)
+        if not ok then
+            -- The original ran lines 13-34 (base setup, text width, font,
+            -- frame width) before erroring on the textHeight arithmetic.
+            -- Redo only the height calculation in insecure context.
+            local textHeight = self.Text:GetStringHeight()
+            local bottomPadding = Clamp(widgetInfo.bottomPadding, 0, textHeight - 1)
+            self:SetHeight(textHeight + bottomPadding)
+        end
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- EditMode Compatibility Fixes
 -- ---------------------------------------------------------------------------
 -- When UIParent is smaller than the screen and centered, several EditMode
@@ -764,14 +801,18 @@ frame:SetScript("OnEvent", function(self, event, arg1)
             if addon.BuildSettingsMenu then
                 addon.BuildSettingsMenu()
             end
-            -- Blizzard_MapCanvas is load-on-demand; if it was already
-            -- loaded before us (e.g. /reload after opening the map),
-            -- install the hook now.
+            -- Load-on-demand addons may already be loaded (e.g. /reload);
+            -- install hooks now if their globals exist.
             if MapCanvasScrollControllerMixin then
                 InstallWorldMapHook()
             end
+            if UIWidgetTemplateTextWithStateMixin then
+                InstallWidgetTaintFixes()
+            end
         elseif arg1 == "Blizzard_MapCanvas" then
             InstallWorldMapHook()
+        elseif arg1 == "Blizzard_UIWidgets" then
+            InstallWidgetTaintFixes()
         elseif arg1 == "Blizzard_CompactRaidFrames" then
             -- Load-on-demand; install the hook now that the frame exists.
             hideRaidManagerEnabled = GetGlobalSetting("hideRaidManager", false)
